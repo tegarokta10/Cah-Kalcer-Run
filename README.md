@@ -1,29 +1,23 @@
 # Cah Kalcer Coach
 
-A simple running tracker and training companion for beginner runners. V1 stores everything in your browser, so there is no account or server database to set up.
+A simple running tracker and training companion for beginner runners. Running data stays in your browser, and V2 can generate a more personal recommendation through Gemini when you request one.
 
-## Current Features
+## Current Version
+
+V2 — AI Recommendation
+
+### V2 Features
 
 - Running activity tracking
-- Pace calculation
-- Running history
-- Basic statistics
-- Rule-based training recommendation
-- Local storage
-- Responsive dashboard
-- Beginner and Intermediate runner profiles
+- Running statistics
+- LocalStorage persistence
+- Rule-based recommendation
+- AI-powered recommendation
+- Gemini API integration
+- Responsive typography
+- AI fallback mechanism
 
-## V1 Status
-
-Completed:
-- Running tracker
-- Statistics
-- Basic recommendation system
-
-Next:
-- AI recommendation
-- Database
-- Strava integration
+Additional V1 features include pace calculation, run history, activity deletion, and Beginner/Intermediate profiles.
 
 ## Run locally
 
@@ -34,16 +28,17 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser. There are no environment variables or API keys to configure.
+Open [http://localhost:3000](http://localhost:3000). To enable AI recommendations, copy `.env.example` to `.env.local`, set `GEMINI_API_KEY`, and restart the dev server. The key is used by the server only. The tracker and rule-based recommendation work without it.
 
 ## How to use
 
-1. Enter a date, distance, and duration, then save a run. Pace is calculated automatically.
-2. Review your latest activities and summary statistics on the dashboard.
-3. Choose Beginner or Intermediate in Runner Profile to adjust the recommendation distance.
-4. Delete an activity with its trash button and confirm the prompt.
+1. Add a run with its date, distance, and duration. Pace is calculated automatically.
+2. Review your activity history and running statistics.
+3. Choose Beginner or Intermediate in Runner Profile.
+4. Select **Generate AI Recommendation** to request a Gemini suggestion. If Gemini is unavailable, the rule-based suggestion stays visible.
+5. Delete an activity with its trash button and confirm the prompt.
 
-Activities are stored in `localStorage` under `runningActivities`, and your level is stored under `runnerProfile`. They stay in this browser on this device. Clearing browser storage removes them.
+Activities are stored in browser `localStorage` under `runningActivities`; your level uses `runnerProfile`. They remain on this browser and device. Clearing browser storage removes them.
 
 ## Verify the app
 
@@ -51,13 +46,19 @@ Activities are stored in `localStorage` under `runningActivities`, and your leve
 npm run build
 ```
 
-You can also check the main flow in the browser: add a run, refresh the page, check its calculated pace and updated statistics, switch experience level, then delete the run and confirm the empty state returns.
+For a manual check, add a run, refresh, confirm its pace and statistics, switch experience level, request an AI recommendation (with a valid API key), and delete the run. Without a key, confirm the missing-key message and rule-based fallback.
+
+## Documentation
+
+- [V2 Development](./docs/V2.md)
+- [AI Recommendation](./docs/AI-RECOMMENDATION.md)
+- [Architecture](./docs/ARCHITECTURE.md)
 
 ## Tech stack
 
-- Next.js App Router
-- React and TypeScript
-- Tailwind CSS (with a small custom stylesheet for the dashboard)
+- Next.js App Router, React, and TypeScript
+- Tailwind CSS and custom dashboard styles
 - Browser `localStorage`
+- Official Google GenAI JavaScript SDK (`@google/genai`)
 
-No Strava, OAuth, external database, authentication, or AI API is used in V1.
+No Strava, OAuth, database, authentication, user accounts, or AI agent is used in V2.

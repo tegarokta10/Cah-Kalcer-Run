@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { formatDuration, formatPace, getRecommendation, sortRunsNewestFirst } from "@/lib/running";
 import type { ExperienceLevel, RunActivity } from "@/types/running";
+import type { AiRecommendation, TrainingContext } from "@/types/recommendation";
 
 const ACTIVITY_KEY = "runningActivities";
 const PROFILE_KEY = "runnerProfile";
@@ -17,6 +18,16 @@ function prettyDate(value: string) {
   return new Date(`${value}T12:00:00`).toLocaleDateString("en-US", {
     day: "numeric", month: "short", year: "numeric",
   });
+}
+
+function isAiRecommendation(value: unknown): value is AiRecommendation {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.title === "string" &&
+    typeof item.distance === "string" &&
+    ["Easy", "Moderate", "Recovery"].includes(String(item.intensity)) &&
+    typeof item.reason === "string" &&
+    Array.isArray(item.tips) && item.tips.length >= 2 && item.tips.every((tip) => typeof tip === "string");
 }
 
 function Icon({ name }: { name: "distance" | "runs" | "pace" | "longest" | "calendar" | "clock" | "trash" | "shoe" | "spark" }) {
@@ -55,6 +66,9 @@ export default function Dashboard() {
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [aiRecommendation, setAiRecommendation] = useState<AiRecommendation | null>(null);
+  const [aiError, setAiError] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Read browser storage after mount so server and browser render the same initial page.
   useEffect(() => {
@@ -106,6 +120,8 @@ export default function Dashboard() {
       ...(notes.trim() ? { notes: notes.trim() } : {}),
     };
     setRuns((current) => [...current, newRun]);
+    setAiRecommendation(null);
+    setAiError("");
     setDistance(""); setHours("0"); setMinutes(""); setSeconds(""); setNotes("");
     setDate(localDateValue()); setSaved(true);
   }
@@ -113,6 +129,57 @@ export default function Dashboard() {
   function deleteRun(id: string) {
     if (!window.confirm("Delete this running activity? This action cannot be undone.")) return;
     setRuns((current) => current.filter((run) => run.id !== id));
+    setAiRecommendation(null);
+    setAiError("");
+  }
+
+  async function generateAiRecommendation() {
+    if (runs.length === 0) {
+      setAiError("Add at least one running activity before generating a recommendation.");
+      return;
+    }
+
+    const context: TrainingContext = {
+      experienceLevel: level.toLowerCase() as TrainingContext["experienceLevel"],
+      totalRuns: runs.length,
+      totalDistance: Number(totalDistance.toFixed(1)),
+      averagePace: averagePace > 0 ? `${formatPace(averagePace)}/km` : "Not available",
+      longestRun: Number(longest.toFixed(1)),
+      recentRuns: sortedRuns.slice(0, 10).map((run) => ({
+        date: run.date,
+        distance: run.distance,
+        durationMinutes: Number((run.duration / 60).toFixed(1)),
+        pace: `${formatPace(run.pace)}/km`,
+      })),
+    };
+
+    setIsGenerating(true);
+    setAiRecommendation(null);
+    setAiError("");
+    try {
+      const response = await fetch("/api/recommendation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ context }),
+      });
+      const payload: unknown = await response.json();
+      if (!response.ok || !payload || typeof payload !== "object" || !("recommendation" in payload)) {
+        const message = payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
+          ? payload.error
+          : "Unable to generate an AI recommendation. Please try again.";
+        throw new Error(message);
+      }
+
+      const result: unknown = payload.recommendation;
+      if (!isAiRecommendation(result)) {
+        throw new Error("Gemini returned an invalid recommendation. Your rule-based suggestion is still available.");
+      }
+      setAiRecommendation(result);
+    } catch (requestError) {
+      setAiError(requestError instanceof Error ? requestError.message : "Unable to generate an AI recommendation. Please try again.");
+    } finally {
+      setIsGenerating(false);
+    }
   }
 
   return <main className="page-shell">
@@ -137,9 +204,16 @@ export default function Dashboard() {
     <section className="dashboard-grid">
       <div className="left-column">
         <section className="panel recommendation-panel" aria-labelledby="recommendation-heading">
-          <div className="panel-heading"><div><p className="eyebrow">A GOOD NEXT STEP</p><h2 id="recommendation-heading">Recommended next run</h2></div><span className="recommendation-icon"><Icon name="spark"/></span></div>
-          <div className="recommendation-main"><div className="run-type">{recommendation.title}</div><div className="recommendation-distance">{recommendation.distance}<span> km</span></div><p>{recommendation.detail}</p></div>
-          <div className="why-box"><span className="why-icon">✳</span><div><strong>Why this recommendation?</strong><p>{recommendation.reason}</p></div></div>
+          <div className="panel-heading"><div><p className="eyebrow">A GOOD NEXT STEP</p><h2 id="recommendation-heading">Your next run</h2></div><span className="recommendation-icon"><Icon name="spark"/></span></div>
+          <div className="analysis-box"><strong>Training analysis <span>Rule based</span></strong><p>Your recent activity suggests a {recommendation.title.toLowerCase()} of {recommendation.distance} km. {recommendation.detail}</p></div>
+          <div className="ai-result-heading"><span className="ai-spark">✳</span><strong>AI recommendation</strong>{aiRecommendation && <span className="ai-badge">Gemini</span>}</div>
+          <div className="recommendation-main"><div className="run-type">{aiRecommendation?.title ?? recommendation.title}</div><div className="recommendation-distance">{aiRecommendation?.distance ?? `${recommendation.distance} km`}</div><div className="intensity-row"><span>Intensity</span><strong>{aiRecommendation?.intensity ?? (recommendation.title === "Recovery Run" ? "Recovery" : "Easy")}</strong></div><p>{aiRecommendation?.reason ?? recommendation.reason}</p></div>
+          <div className="ai-tips"><strong>Tips</strong><ul>{(aiRecommendation?.tips ?? ["Keep the effort comfortable", "Focus on steady, relaxed pacing", "Stop if you experience unusual pain"]).map((tip, index) => <li key={`${index}-${tip}`}>{tip}</li>)}</ul></div>
+          {aiError && <p className="ai-message" role="status">{aiError} Your rule-based recommendation is shown above.</p>}
+          {!runs.length && <p className="ai-message">Add at least one running activity before generating a recommendation.</p>}
+          <button className="button button-primary ai-button" type="button" onClick={generateAiRecommendation} disabled={isGenerating || !runs.length}>
+            {isGenerating ? <><span className="spinner"/> Generating your recommendation...</> : <>Generate AI Recommendation <span>↗</span></>}
+          </button>
         </section>
 
         <section id="activities" className="panel activities-panel" aria-labelledby="activities-heading">
@@ -166,7 +240,7 @@ export default function Dashboard() {
 
         <section className="panel profile-panel" aria-labelledby="profile-heading">
           <div className="profile-heading"><span className="profile-avatar"><Icon name="runs"/></span><div><p className="eyebrow">YOUR STARTING POINT</p><h2 id="profile-heading">Runner profile</h2></div></div>
-          <label className="field-label" htmlFor="experience-level">Experience level</label><select id="experience-level" value={level} onChange={(event) => setLevel(event.target.value as ExperienceLevel)}><option value="Beginner">Beginner</option><option value="Intermediate">Intermediate</option></select>
+          <label className="field-label" htmlFor="experience-level">Experience level</label><select id="experience-level" value={level} onChange={(event) => { setLevel(event.target.value as ExperienceLevel); setAiRecommendation(null); setAiError(""); }}><option value="Beginner">Beginner</option><option value="Intermediate">Intermediate</option></select>
           <p className="profile-note">Your level helps tailor the distance in your next run suggestion.</p>
         </section>
         <p className="local-note"><span>⌑</span> Your runs are saved on this device only.</p>

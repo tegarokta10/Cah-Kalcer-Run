@@ -21,3 +21,84 @@ a{color:inherit;text-decoration:none}
 @media(max-width:850px){.page-shell{padding:0 25px}.topbar{gap:36px}.dashboard-grid{grid-template-columns:minmax(0,1.35fr) minmax(270px,.9fr)}.activity-row{grid-template-columns:32px minmax(75px,1fr) 65px 66px 75px 26px;gap:7px}.activity-metric strong{font-size:11px}}
 @media(max-width:680px){.page-shell{padding:0 17px}.topbar{height:65px;gap:20px}.brand{font-size:14px}.brand-mark{width:31px;height:31px}.nav-links{gap:16px;font-size:11px}.top-profile>span:last-child{display:none}.welcome-row{padding:29px 0 20px;align-items:flex-start}.welcome-row h1{font-size:23px}.welcome-copy{max-width:290px;line-height:1.5}.today-chip{display:none}.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.summary-card{min-height:99px;padding:12px}.summary-value{font-size:23px}.dashboard-grid{grid-template-columns:1fr;gap:13px;margin-top:13px}.left-column{display:contents}.right-column{display:contents}.recommendation-panel{grid-row:1}.activities-panel{grid-row:3}.form-panel{grid-row:2}.profile-panel{grid-row:4}.local-note{grid-row:5}.activity-row{grid-template-columns:34px minmax(90px,1fr) 67px 26px;gap:8px;padding:11px 0}.activity-row .activity-metric:nth-of-type(4){display:none}.activity-details strong{font-size:10px}.activities-panel{padding:16px 13px 7px}.panel{padding:16px}.footer{margin-top:22px}.footer span:last-child{text-align:right}}
 @media(max-width:390px){.page-shell{padding:0 12px}.nav-links{gap:10px;font-size:10px}.brand{gap:6px;font-size:12px}.summary-top{font-size:10px}.summary-card{padding:10px}.activity-row{grid-template-columns:29px minmax(76px,1fr) 61px 24px;gap:6px}.activity-metric strong{font-size:10px}}
+
+/* V2: keep supporting information readable at a glance on both screen sizes. */
+body{font-size:16px}
+.nav-links{font-size:14px}
+.top-profile{font-size:14px}
+.eyebrow{font-size:11px}
+.welcome-row h1{font-size:32px}
+.welcome-copy{font-size:16px;line-height:1.55}
+.today-chip{font-size:11px}
+.summary-card{padding:17px 18px;min-height:119px}
+.summary-top{font-size:14px}
+.summary-value{font-size:30px}
+.summary-card p{font-size:14px;margin-top:3px}
+.panel h2{font-size:21px}
+.recommendation-panel{padding:22px}
+.recommendation-main{padding:20px}
+.run-type{font-size:15px}
+.recommendation-distance{font-size:30px}
+.recommendation-main p{font-size:15px;line-height:1.6}
+.why-box strong,.why-box p{font-size:14px;line-height:1.5}
+.text-link{font-size:14px}
+.empty-state>strong{font-size:17px}
+.empty-state p{font-size:15px;line-height:1.5}
+.button{font-size:15px}
+.activity-details strong{font-size:14px}
+.activity-details>span{font-size:13px}
+.activity-metric strong{font-size:15px}
+.activity-metric small{font-size:14px}
+.activity-metric>span{font-size:14px}
+.field-label{font-size:14px}
+.optional{font-size:13px}
+.input-wrap input,.input-suffix{font-size:15px}
+.duration-inputs input{font-size:15px}
+.duration-inputs label span{font-size:14px}
+.pace-preview{font-size:13px}
+.pace-preview strong{font-size:14px}
+textarea{font-size:15px;line-height:1.5}
+.form-message,.profile-panel select,.profile-note{font-size:14px}
+.profile-heading h2{font-size:18px}
+.local-note{font-size:13px}
+.footer{font-size:12px}
+.analysis-box{margin-top:16px;padding:13px 14px;border:1px solid #e7ece5;border-radius:9px;background:#fff}
+.analysis-box>strong{display:flex;align-items:center;gap:9px;font-size:14px}
+.analysis-box>strong span,.ai-badge{padding:3px 8px;border-radius:20px;background:#eef3eb;color:#5d775f;font-size:12px;font-weight:600}
+.analysis-box p{margin:6px 0 0;color:#737f74;font-size:14px;line-height:1.55}
+.ai-result-heading{display:flex;align-items:center;gap:8px;margin:16px 0 10px;font-size:17px}
+.ai-spark{color:#d38a55;font-size:18px}
+.ai-badge{margin-left:auto;background:#e8f0e7}
+.intensity-row{display:flex;align-items:center;gap:9px;margin-top:8px;color:#d5e2d5;font-size:14px}
+.intensity-row strong{padding:4px 9px;border:1px solid #ffffff40;border-radius:20px;font-size:13px}
+.ai-tips{margin:13px 2px 0}
+.ai-tips>strong{font-size:14px}
+.ai-tips ul{display:grid;gap:6px;margin:7px 0 0;padding-left:20px;color:#68756a;font-size:14px;line-height:1.5}
+.ai-tips li::marker{color:#799275}
+.ai-button{width:100%;margin-top:15px;min-height:46px}
+.ai-button:disabled{opacity:.72;cursor:not-allowed;transform:none}
+.ai-message{margin:12px 0 0;color:#815f42;font-size:14px;line-height:1.5}
+.spinner{width:16px;height:16px;border:2px solid #ffffff70;border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:680px){
+  .welcome-row h1{font-size:27px}
+  .nav-links{font-size:13px}
+  .summary-card{padding:13px;min-height:110px}
+  .summary-top{font-size:13px}
+  .summary-value{font-size:27px}
+  .summary-card p{font-size:13px}
+  .panel h2{font-size:20px}
+  .recommendation-main p,.why-box strong,.why-box p,.analysis-box p,.ai-tips ul,.ai-message,.profile-note{font-size:14px}
+  .activity-details strong,.activity-metric strong{font-size:13px}
+  .activity-details>span,.activity-metric>span{font-size:14px}
+  .activity-metric small{font-size:14px}
+  .field-label,.profile-panel select,.form-message{font-size:14px}
+  .button{font-size:15px}
+  .footer{font-size:11px}
+}
+@media(max-width:390px){
+  .brand{font-size:12px}
+  .summary-top,.summary-card p{font-size:14px}
+  .activity-details strong,.activity-metric strong{font-size:14px}
+  .activity-details>span,.activity-metric>span{font-size:14px}
+}
