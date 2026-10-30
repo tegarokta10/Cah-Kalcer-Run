@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 const STATE_COOKIE = "strava_oauth_state";
 
 function callbackRedirect(origin: string, result: string) {
-  const response = NextResponse.redirect(new URL(`/?strava=${encodeURIComponent(result)}`, origin));
+  const response = NextResponse.redirect(new URL(`/dashboard?strava=${encodeURIComponent(result)}`, origin));
   response.cookies.set(STATE_COOKIE, "", { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/api/strava/callback", maxAge: 0 });
   return response;
 }

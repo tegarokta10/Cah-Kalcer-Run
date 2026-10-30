@@ -8,5 +8,5 @@ export async function GET(request: Request) {
 
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.exchangeCodeForSession(code);
-  return NextResponse.redirect(new URL(error ? "/login?error=confirmation_failed" : "/", url.origin));
+  return NextResponse.redirect(new URL(error ? "/login?error=confirmation_failed" : "/dashboard", url.origin));
 }

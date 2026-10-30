@@ -2,6 +2,7 @@ node_modules/
 .next/
 out/
 dist/
+.agents/
 .env*
 !.env.example
 npm-debug.log*

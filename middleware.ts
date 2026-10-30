@@ -2,11 +2,17 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+  const isAuthPage = path === "/login" || path === "/signup" || path === "/register";
+  const isDashboard = path === "/dashboard" || path.startsWith("/dashboard/");
+
+  // The public landing page should not make an auth request or depend on Supabase configuration.
+  if (path === "/" || path.startsWith("/api/") || path === "/auth/callback") return NextResponse.next();
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anonKey) {
-    if (request.nextUrl.pathname.startsWith("/api/")) return NextResponse.next();
-    if (["/login", "/signup", "/auth/callback"].includes(request.nextUrl.pathname)) return NextResponse.next();
+    if (isAuthPage) return NextResponse.next();
     return NextResponse.redirect(new URL("/login?error=supabase_not_configured", request.url));
   }
 
@@ -23,15 +29,11 @@ export async function middleware(request: NextRequest) {
   });
 
   const { data: { user } } = await supabase.auth.getUser();
-  const path = request.nextUrl.pathname;
-  const isAuthPage = path === "/login" || path === "/signup";
-  const isAuthCallback = path === "/auth/callback";
-  const isApi = path.startsWith("/api/");
 
-  if (!user && !isAuthPage && !isAuthCallback && !isApi) {
-    return NextResponse.redirect(new URL("/login", request.url));
+  if (!user && isDashboard) {
+    return NextResponse.redirect(new URL("/login?next=%2Fdashboard", request.url));
   }
-  if (user && isAuthPage) return NextResponse.redirect(new URL("/", request.url));
+  if (user && isAuthPage) return NextResponse.redirect(new URL("/dashboard", request.url));
   return response;
 }
 

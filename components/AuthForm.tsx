@@ -35,7 +35,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         });
         if (authError) throw authError;
         if (data.session) {
-          router.replace("/");
+          router.replace("/dashboard");
           router.refresh();
         } else {
           setMessage("Check your email to confirm your account, then log in.");
@@ -43,7 +43,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       } else {
         const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
         if (authError) throw authError;
-        router.replace("/");
+        router.replace("/dashboard");
         router.refresh();
       }
     } catch (authError) {
@@ -55,7 +55,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
   return <main className="auth-page">
     <section className="auth-card">
-      <a href="/login" className="brand auth-brand"><span className="brand-mark">🏃</span><span>Cah Kalcer<span className="brand-muted"> Coach</span></span></a>
+      <a href="/" className="brand auth-brand"><span className="brand-mark">🏃</span><span>Cah Kalcer<span className="brand-muted"> Run</span></span></a>
       <p className="eyebrow">YOUR RUNNING SPACE</p>
       <h1>{isSignup ? "Create your account" : "Welcome back"}</h1>
       <p className="auth-intro">{isSignup ? "Start tracking your progress and connecting your runs." : "Log in to see your activities and recommendations."}</p>
@@ -68,7 +68,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         {message && <p className="auth-message" role="status">{message}</p>}
         <button className="button button-primary auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : isSignup ? "Create account" : "Log in"}</button>
       </form>
-      <p className="auth-switch">{isSignup ? "Already have an account?" : "New to Cah Kalcer Coach?"} <Link href={isSignup ? "/login" : "/signup"}>{isSignup ? "Log in" : "Sign up"}</Link></p>
+      <p className="auth-switch">{isSignup ? "Already have an account?" : "New to Cah Kalcer Run?"} <Link href={isSignup ? "/login" : "/register"}>{isSignup ? "Log in" : "Sign up"}</Link></p>
     </section>
   </main>;
 }

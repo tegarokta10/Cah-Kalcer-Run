@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 
   const clientId = process.env.STRAVA_CLIENT_ID;
   const redirectUri = process.env.STRAVA_REDIRECT_URI;
-  if (!clientId || !redirectUri) return NextResponse.redirect(new URL("/?strava=connect_config_missing", url.origin));
+  if (!clientId || !redirectUri) return NextResponse.redirect(new URL("/dashboard?strava=connect_config_missing", url.origin));
 
   const state = randomBytes(32).toString("hex");
   const authorization = new URL("https://www.strava.com/oauth/authorize");

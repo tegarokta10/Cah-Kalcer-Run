@@ -1,108 +1,78 @@
-# AI Running Coach
+# Cah Kalcer Run
 
-A running tracker for beginner runners. The project evolved from local tracking (V1), through Gemini recommendations (V2) and Supabase storage (V3), to user-owned data and read-only Strava sync (V4).
+A running tracker for beginner runners, with Supabase accounts and storage, optional Strava activity sync, and optional Gemini recommendations.
 
-## Current Version
+## Current version
 
-V4 — Strava Integration
+V4 includes:
 
-### V4 Features
+- Supabase email and password authentication
+- Per-user running activity storage protected by Row Level Security
+- Manual run logging and activity history
+- Read-only Strava OAuth and activity sync
+- Gemini recommendations with a rule-based fallback
+- One-time import of older browser-saved activities
+- Public landing page, sign up, login, and protected dashboard
 
-- Supabase email/password authentication
-- User-owned running activities with Row Level Security
-- Strava OAuth with read-only activity scope
-- Strava activity import and normalization
-- Duplicate prevention across repeated syncs
-- Persistent manual and Strava running data
-- Gemini AI recommendation and rule-based fallback
-- V2 browser-data migration
+## Local development
 
-## Setup
-
-You need Node.js 20 or newer and npm.
+Requirements: Node.js 20 or newer and npm.
 
 1. Create a Supabase project and enable Email authentication.
-2. Run the V4 SQL migration in [docs/DATABASE.md](./docs/DATABASE.md).
-3. If your V3 database has rows, follow the owner backfill in that guide after creating the first account.
-4. In Supabase Auth URL Configuration, allow `http://localhost:3000/auth/callback` for email confirmation.
-5. Register a Strava API application. Set its authorization callback domain to `localhost` for local development and add `http://localhost:3000/api/strava/callback` as the redirect URI.
-6. Copy `.env.example` to `.env.local` and fill in the Supabase, Strava, and token-encryption variables. `GEMINI_API_KEY` is optional.
-7. Install and start the app:
+2. Apply the V4 migration in [docs/DATABASE.md](./docs/DATABASE.md). If migrating V3 rows, follow its ownership backfill steps.
+3. Copy `.env.example` to `.env.local` and add your local configuration. `.env.local` is ignored by Git.
+4. For local Strava testing, set the Strava callback domain to `localhost` and the redirect URL to `http://localhost:3000/api/strava/callback`.
+5. Install and start the app:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Restart Next.js after editing `.env.local`.
+Open [http://localhost:3000](http://localhost:3000). The public landing page is `/`, account creation is `/register`, login is `/login`, and the signed-in dashboard is `/dashboard`. `/signup` remains as a legacy route.
 
-Create a random 32-byte encryption key for `STRAVA_TOKEN_ENCRYPTION_KEY`, encoded as Base64. For example, run this in a terminal and copy its output into `.env.local`:
+Generate a Base64 encoded random 32-byte key for `STRAVA_TOKEN_ENCRYPTION_KEY` with:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
-Never commit `.env.local`. Do not expose the Strava client secret, token encryption key, or Supabase service-role key to the browser.
+Keep this value stable. Changing it makes previously encrypted Strava tokens unreadable. Never commit `.env.local`, expose server-only keys to the browser, or use the Supabase service-role key as the anon key.
 
-## Environment Variables
+## Deploy to Vercel
 
-Set these in `.env.local` for local development and in Vercel Project Settings → Environment Variables for deployment:
+Vercel detects this Next.js App Router project automatically. The production build command is `npm run build`; no custom `vercel.json` is required. Follow [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) before promoting a deployment.
 
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/publishable key; protected by RLS |
-| `SUPABASE_SERVICE_ROLE_KEY` | Strava feature | Server-only access to encrypted Strava connection records |
-| `STRAVA_CLIENT_ID` | Strava feature | Strava application ID |
-| `STRAVA_CLIENT_SECRET` | Strava feature | Server-only Strava OAuth secret |
-| `STRAVA_REDIRECT_URI` | Strava feature | Full callback URL for the deployed domain, ending in `/api/strava/callback` |
-| `STRAVA_TOKEN_ENCRYPTION_KEY` | Strava feature | Base64 encoded random 32-byte key; keep it stable to decrypt stored tokens |
-| `GEMINI_API_KEY` | Optional | Server-side Gemini recommendations; rule-based fallback works without it |
+Add environment variable names and values in the Vercel project settings for the environments you use. Local `.env.local` values do not automatically transfer to Vercel. At minimum configure:
 
-Never prefix server-only variables with `NEXT_PUBLIC_`. Set Vercel variables for the Production environment before building/deploying. Preview deployments need their own matching OAuth configuration if they are used for OAuth testing.
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-## Production Deployment
+For Strava, also configure `SUPABASE_SERVICE_ROLE_KEY`, `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REDIRECT_URI`, and `STRAVA_TOKEN_ENCRYPTION_KEY`. `GEMINI_API_KEY` is optional; recommendations retain the rule-based fallback without it.
 
-The app is prepared for deployment as a Next.js project on Vercel. Before deployment, apply the SQL migration and any V3 data ownership backfill in Supabase. Then add the environment variables above to the Vercel project and configure Supabase Auth and Strava callbacks for the stable production domain. See the [deployment checklist](./docs/DEPLOYMENT.md). Deployment itself is a manual step; this repository preparation does not deploy the app.
+For production OAuth, set `STRAVA_REDIRECT_URI` to the exact stable production callback URL, such as `https://your-domain.example/api/strava/callback`. Register that callback URL and its domain in Strava. Set the Supabase Auth Site URL to the production domain and allow `https://your-domain.example/auth/callback` in redirect URLs. Preview deployment URLs need their own OAuth configuration if you want to test sign-in confirmation or Strava there.
 
-## First use
-
-1. Sign up or log in.
-2. If the browser contains V2 activities, choose whether to import them into your account.
-3. Add a manual run or choose **Connect Strava**, approve read access, then use **Sync activities**.
-4. Imported activities are marked Strava; disconnecting Strava keeps already imported runs.
-
-## Verify the app
+## Verify before redeploying
 
 ```bash
+npx tsc --noEmit --incremental false
 npm run build
 ```
 
-Then follow the manual checks in [docs/V4.md](./docs/V4.md). Full OAuth and database tests require a configured Supabase project and Strava application.
+There is no automated test script configured. Use [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for production smoke checks and [docs/V4.md](./docs/V4.md) for V4 behavior checks. OAuth, database ownership, and AI provider flows need configured external services to verify end to end.
 
 ## Documentation
 
-### Development History
-
-- [V1 — Running Tracker](./docs/V1.md)
-- [V2 — AI Recommendation](./docs/V2.md)
-- [V3 — Persistent Database](./docs/V3.md)
-- [V4 — Strava Integration](./docs/V4.md)
-
-### Technical Documentation
-
+- [Deployment checklist](./docs/DEPLOYMENT.md)
 - [Architecture](./docs/ARCHITECTURE.md)
-- [Database](./docs/DATABASE.md)
-- [AI Recommendation](./docs/AI-RECOMMENDATION.md)
-- [Strava Integration](./docs/STRAVA-INTEGRATION.md)
+- [Database and V4 migration](./docs/DATABASE.md)
+- [AI recommendation](./docs/AI-RECOMMENDATION.md)
+- [Strava integration](./docs/STRAVA-INTEGRATION.md)
+- [V1](./docs/V1.md), [V2](./docs/V2.md), [V3](./docs/V3.md), [V4](./docs/V4.md)
 
 ## Tech stack
 
-- Next.js App Router, React, and TypeScript
-- Tailwind CSS/PostCSS tooling
+- Next.js App Router, React, TypeScript, and Tailwind CSS tooling
 - Supabase Auth, PostgreSQL, and Row Level Security
-- Official Strava OAuth 2.0 and API v3
-- Official Google GenAI JavaScript SDK (`@google/genai`)
-- Vercel deployment target
-
-Strava sync is read-only. The app does not post or edit Strava activities and has no social features or AI agent.
+- Strava OAuth 2.0 and API v3, read-only
+- Google GenAI JavaScript SDK
