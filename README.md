@@ -1,4 +1,4 @@
-# Cah Kalcer Coach
+# AI Running Coach
 
 A running tracker for beginner runners. The project evolved from local tracking (V1), through Gemini recommendations (V2) and Supabase storage (V3), to user-owned data and read-only Strava sync (V4).
 
@@ -44,6 +44,27 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
 Never commit `.env.local`. Do not expose the Strava client secret, token encryption key, or Supabase service-role key to the browser.
 
+## Environment Variables
+
+Set these in `.env.local` for local development and in Vercel Project Settings → Environment Variables for deployment:
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/publishable key; protected by RLS |
+| `SUPABASE_SERVICE_ROLE_KEY` | Strava feature | Server-only access to encrypted Strava connection records |
+| `STRAVA_CLIENT_ID` | Strava feature | Strava application ID |
+| `STRAVA_CLIENT_SECRET` | Strava feature | Server-only Strava OAuth secret |
+| `STRAVA_REDIRECT_URI` | Strava feature | Full callback URL for the deployed domain, ending in `/api/strava/callback` |
+| `STRAVA_TOKEN_ENCRYPTION_KEY` | Strava feature | Base64 encoded random 32-byte key; keep it stable to decrypt stored tokens |
+| `GEMINI_API_KEY` | Optional | Server-side Gemini recommendations; rule-based fallback works without it |
+
+Never prefix server-only variables with `NEXT_PUBLIC_`. Set Vercel variables for the Production environment before building/deploying. Preview deployments need their own matching OAuth configuration if they are used for OAuth testing.
+
+## Production Deployment
+
+The app is prepared for deployment as a Next.js project on Vercel. Before deployment, apply the SQL migration and any V3 data ownership backfill in Supabase. Then add the environment variables above to the Vercel project and configure Supabase Auth and Strava callbacks for the stable production domain. See the [deployment checklist](./docs/DEPLOYMENT.md). Deployment itself is a manual step; this repository preparation does not deploy the app.
+
 ## First use
 
 1. Sign up or log in.
@@ -78,8 +99,10 @@ Then follow the manual checks in [docs/V4.md](./docs/V4.md). Full OAuth and data
 ## Tech stack
 
 - Next.js App Router, React, and TypeScript
+- Tailwind CSS/PostCSS tooling
 - Supabase Auth, PostgreSQL, and Row Level Security
 - Official Strava OAuth 2.0 and API v3
 - Official Google GenAI JavaScript SDK (`@google/genai`)
+- Vercel deployment target
 
 Strava sync is read-only. The app does not post or edit Strava activities and has no social features or AI agent.
