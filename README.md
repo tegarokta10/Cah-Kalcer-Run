@@ -29,7 +29,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The public landing page is `/`, account creation is `/register`, login is `/login`, and the signed-in dashboard is `/dashboard`. `/signup` remains as a legacy route.
+Open [http://localhost:3000](http://localhost:3000). The public landing page is `/`, account creation is `/register`, login is `/login`, password recovery starts at `/forgot-password`, and the signed-in dashboard is `/dashboard`. `/signup` remains as a legacy route.
 
 Generate a Base64 encoded random 32-byte key for `STRAVA_TOKEN_ENCRYPTION_KEY` with:
 
@@ -50,7 +50,7 @@ Add environment variable names and values in the Vercel project settings for the
 
 For Strava, also configure `SUPABASE_SERVICE_ROLE_KEY`, `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REDIRECT_URI`, and `STRAVA_TOKEN_ENCRYPTION_KEY`. `GEMINI_API_KEY` is optional; recommendations retain the rule-based fallback without it.
 
-For production OAuth, set `STRAVA_REDIRECT_URI` to the exact stable production callback URL, such as `https://your-domain.example/api/strava/callback`. Register that callback URL and its domain in Strava. Set the Supabase Auth Site URL to the production domain and allow `https://your-domain.example/auth/callback` in redirect URLs. Preview deployment URLs need their own OAuth configuration if you want to test sign-in confirmation or Strava there.
+For production OAuth, set `STRAVA_REDIRECT_URI` to the exact stable production callback URL, such as `https://your-domain.example/api/strava/callback`. Register that callback URL and its domain in Strava. Set the Supabase Auth Site URL to the production domain and allow both `https://your-domain.example/auth/callback` and `https://your-domain.example/auth/recovery-callback` in redirect URLs. Preview deployment URLs need their own OAuth configuration if you want to test email confirmation, password recovery, or Strava there.
 
 ## Verify before redeploying
 

@@ -3,11 +3,12 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
-  const isAuthPage = path === "/login" || path === "/signup" || path === "/register";
+  const isAuthPage = path === "/login" || path === "/signup" || path === "/register" || path === "/forgot-password" || path === "/reset-password";
+  const isAuthEntry = path === "/login" || path === "/signup" || path === "/register";
   const isDashboard = path === "/dashboard" || path.startsWith("/dashboard/");
 
   // The public landing page should not make an auth request or depend on Supabase configuration.
-  if (path === "/" || path.startsWith("/api/") || path === "/auth/callback") return NextResponse.next();
+  if (path === "/" || path.startsWith("/api/") || path === "/auth/callback" || path === "/auth/recovery-callback") return NextResponse.next();
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -33,7 +34,7 @@ export async function middleware(request: NextRequest) {
   if (!user && isDashboard) {
     return NextResponse.redirect(new URL("/login?next=%2Fdashboard", request.url));
   }
-  if (user && isAuthPage) return NextResponse.redirect(new URL("/dashboard", request.url));
+  if (user && isAuthEntry) return NextResponse.redirect(new URL("/dashboard", request.url));
   return response;
 }
 

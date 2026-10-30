@@ -49,6 +49,9 @@ In Supabase Auth URL Configuration:
 
 - Set the Site URL to the production origin, for example `https://your-domain.example`.
 - Add `https://your-domain.example/auth/callback` to the allowed redirect URLs.
+- Add `https://your-domain.example/auth/recovery-callback` to the allowed redirect URLs for password reset emails.
+- For local password recovery, also allow `http://localhost:3000/auth/recovery-callback`.
+- Password reset requires email delivery. Supabase's built-in mailer has a low testing limit; configure custom SMTP for regular production use.
 
 In the Strava Developer Dashboard:
 
@@ -63,6 +66,7 @@ OAuth begins and returns on the same stable host. Preview URLs are temporary and
 - [ ] Open `/` and confirm the public landing page loads.
 - [ ] Create an account at `/register`, confirm email if required, then log in at `/login`.
 - [ ] Confirm login opens `/dashboard` and logout returns to `/login`.
+- [ ] Request a password reset at `/forgot-password`, open the email link, and save a new password.
 - [ ] Create a manual run and confirm it appears after refresh; delete it and confirm it stays deleted.
 - [ ] Confirm one account cannot access another account's activities.
 - [ ] Generate an AI recommendation, or confirm the rule-based result works when Gemini is not configured.
