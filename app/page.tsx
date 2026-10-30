@@ -1,12 +1,38 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { isLegacyRun } from "@/lib/activities";
 import { formatDuration, formatPace, getRecommendation, sortRunsNewestFirst } from "@/lib/running";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { ExperienceLevel, RunActivity } from "@/types/running";
-import type { AiRecommendation, TrainingContext } from "@/types/recommendation";
+import type { AiRecommendation } from "@/types/recommendation";
+
+type StravaStatus = { connected: boolean; athleteId: string | null; lastSyncedAt: string | null };
 
 const ACTIVITY_KEY = "runningActivities";
 const PROFILE_KEY = "runnerProfile";
+
+async function readActivities(): Promise<RunActivity[]> {
+  const response = await fetch("/api/activities");
+  const payload: unknown = await response.json();
+  if (!response.ok || !payload || typeof payload !== "object" || !("activities" in payload) || !Array.isArray(payload.activities)) {
+    const message = payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
+      ? payload.error
+      : "Unable to load running activities. Please try again.";
+    throw new Error(message);
+  }
+  return payload.activities as RunActivity[];
+}
+
+async function readApiError(response: Response, fallback: string) {
+  try {
+    const payload: unknown = await response.json();
+    if (payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string") return payload.error;
+  } catch {
+    // Use the simple fallback message when the server response is not JSON.
+  }
+  return fallback;
+}
 
 function localDateValue() {
   const now = new Date();
@@ -57,7 +83,26 @@ function SummaryCard({ label, value, unit, icon, foot }: { label: string; value:
 export default function Dashboard() {
   const [runs, setRuns] = useState<RunActivity[]>([]);
   const [level, setLevel] = useState<ExperienceLevel>("Beginner");
-  const [ready, setReady] = useState(false);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [isLoadingRuns, setIsLoadingRuns] = useState(true);
+  const [activityError, setActivityError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [legacyRuns, setLegacyRuns] = useState<RunActivity[] | null>(null);
+  const [migrationDismissed, setMigrationDismissed] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [migrationError, setMigrationError] = useState("");
+  const [migrationMessage, setMigrationMessage] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [stravaStatus, setStravaStatus] = useState<StravaStatus>({ connected: false, athleteId: null, lastSyncedAt: null });
+  const [isLoadingStrava, setIsLoadingStrava] = useState(true);
+  const [isSyncingStrava, setIsSyncingStrava] = useState(false);
+  const [isDisconnectingStrava, setIsDisconnectingStrava] = useState(false);
+  const [stravaMessage, setStravaMessage] = useState("");
+  const [stravaError, setStravaError] = useState("");
+  const [authError, setAuthError] = useState("");
   const [date, setDate] = useState(localDateValue());
   const [distance, setDistance] = useState("");
   const [hours, setHours] = useState("0");
@@ -70,30 +115,58 @@ export default function Dashboard() {
   const [aiError, setAiError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Read browser storage after mount so server and browser render the same initial page.
+  // localStorage is read only for profile preferences and one-time V2 data migration.
   useEffect(() => {
     try {
       const savedRuns = localStorage.getItem(ACTIVITY_KEY);
       const savedLevel = localStorage.getItem(PROFILE_KEY);
       if (savedRuns) {
         const parsed: unknown = JSON.parse(savedRuns);
-        if (Array.isArray(parsed)) setRuns(parsed as RunActivity[]);
+        if (Array.isArray(parsed)) {
+          const validRuns = parsed.filter(isLegacyRun);
+          if (validRuns.length) setLegacyRuns(validRuns);
+        }
       }
       if (savedLevel === "Beginner" || savedLevel === "Intermediate") setLevel(savedLevel);
     } catch {
-      // A malformed or unavailable saved value should not prevent the dashboard from opening.
+      // Ignore malformed old data and continue loading from the database.
     }
-    setReady(true);
+
+    setProfileLoaded(true);
+    readActivities()
+      .then((items) => { setRuns(items); setActivityError(""); })
+      .catch(() => setActivityError("Unable to load running activities. Please try again."))
+      .finally(() => setIsLoadingRuns(false));
+
+    fetch("/api/auth/me").then((response) => response.json()).then((payload) => {
+      if (payload?.user?.email) setUserEmail(payload.user.email);
+    }).catch(() => {});
+    fetch("/api/strava/status").then((response) => {
+      if (!response.ok) throw new Error("Strava status unavailable");
+      return response.json();
+    }).then((payload) => {
+      if (payload?.connection) setStravaStatus(payload.connection);
+    }).catch(() => setStravaError("Unable to load Strava connection status."))
+      .finally(() => setIsLoadingStrava(false));
+
+    const stravaResult = new URLSearchParams(window.location.search).get("strava");
+    if (stravaResult === "connected") setStravaMessage("Strava connected successfully.");
+    if (stravaResult === "cancelled") setStravaError("Strava connection was cancelled.");
+    if (stravaResult === "connect_failed") setStravaError("Unable to connect to Strava. Please try again.");
+    if (stravaResult === "connect_config_missing" || stravaResult === "strava_credentials_missing") setStravaError("Strava is not configured. Check STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, and STRAVA_REDIRECT_URI in .env.local, then restart the server.");
+    if (stravaResult === "state_invalid") setStravaError("Strava security check failed. Start again from the same address (localhost or 127.0.0.1) and allow cookies.");
+    if (stravaResult === "authorization_code_missing") setStravaError("Strava did not return an authorization code. Check the Strava app callback settings and try again.");
+    if (stravaResult === "token_exchange_failed") setStravaError("Strava rejected the authorization. Check that the client ID and secret match the same Strava app and that its callback domain is localhost.");
+    if (stravaResult === "token_response_invalid") setStravaError("Strava returned an incomplete authorization response. Review the requested permissions and reconnect.");
+    if (stravaResult === "connection_storage_failed") setStravaError("Strava authorized successfully, but Supabase could not save the connection. Check the V4 SQL migration and server-only Supabase service key.");
+    if (stravaResult === "token_encryption_config_error") setStravaError("Strava authorized successfully, but token encryption configuration is invalid. Check STRAVA_TOKEN_ENCRYPTION_KEY in .env.local.");
+    if (stravaResult === "scope_insufficient") setStravaError("Strava did not grant activity read access. Please reconnect and approve the requested permission.");
+    if (stravaResult) window.history.replaceState({}, "", window.location.pathname);
   }, []);
 
   useEffect(() => {
-    if (!ready) return;
-    localStorage.setItem(ACTIVITY_KEY, JSON.stringify(runs));
-  }, [runs, ready]);
-
-  useEffect(() => {
-    if (ready) localStorage.setItem(PROFILE_KEY, level);
-  }, [level, ready]);
+    if (profileLoaded) localStorage.setItem(PROFILE_KEY, level);
+  }, [level, profileLoaded]);
 
   const sortedRuns = useMemo(() => sortRunsNewestFirst(runs), [runs]);
   const totalDistance = runs.reduce((sum, run) => sum + run.distance, 0);
@@ -102,11 +175,24 @@ export default function Dashboard() {
   const longest = runs.reduce((max, run) => Math.max(max, run.distance), 0);
   const recommendation = getRecommendation(sortedRuns[0], level);
 
-  function addRun(event: FormEvent<HTMLFormElement>) {
+  async function refreshRuns() {
+    try {
+      const items = await readActivities();
+      setRuns(items);
+      setActivityError("");
+      return items;
+    } catch (refreshError) {
+      setActivityError("Unable to load running activities. Please try again.");
+      throw refreshError;
+    }
+  }
+
+  async function addRun(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setSaveError("");
     setSaved(false);
-    const km = Number(distance);
+    const km = Number(Number(distance).toFixed(2));
     const totalSeconds = Number(hours || 0) * 3600 + Number(minutes || 0) * 60 + Number(seconds || 0);
     if (!date) return setError("Please choose a date for this run.");
     if (!Number.isFinite(km) || km <= 0) return setError("Distance must be greater than 0.");
@@ -114,23 +200,71 @@ export default function Dashboard() {
     if (Number(minutes || 0) > 59 || Number(seconds || 0) > 59) return setError("Minutes and seconds must be less than 60.");
     if (totalSeconds <= 0) return setError("Duration must be greater than 0.");
 
-    const newRun: RunActivity = {
-      id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
-      date, distance: km, duration: totalSeconds, pace: totalSeconds / km,
-      ...(notes.trim() ? { notes: notes.trim() } : {}),
-    };
-    setRuns((current) => [...current, newRun]);
-    setAiRecommendation(null);
-    setAiError("");
-    setDistance(""); setHours("0"); setMinutes(""); setSeconds(""); setNotes("");
-    setDate(localDateValue()); setSaved(true);
+    setSaving(true);
+    try {
+      const response = await fetch("/api/activities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, distance: km, duration: totalSeconds, notes: notes.trim() }),
+      });
+      if (!response.ok) throw new Error(await readApiError(response, "Unable to save this activity. Please try again."));
+
+      setAiRecommendation(null);
+      setAiError("");
+      setDistance(""); setHours("0"); setMinutes(""); setSeconds(""); setNotes("");
+      setDate(localDateValue()); setSaved(true);
+      try { await refreshRuns(); } catch { /* The save succeeded; show the separate load error. */ }
+    } catch (requestError) {
+      setSaveError(requestError instanceof Error ? requestError.message : "Unable to save this activity. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function deleteRun(id: string) {
+  async function deleteRun(id: string) {
     if (!window.confirm("Delete this running activity? This action cannot be undone.")) return;
-    setRuns((current) => current.filter((run) => run.id !== id));
-    setAiRecommendation(null);
-    setAiError("");
+    setDeletingId(id);
+    setDeleteError("");
+    try {
+      const response = await fetch(`/api/activities/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(await readApiError(response, "Unable to delete this activity. Please try again."));
+      setAiRecommendation(null);
+      setAiError("");
+      try { await refreshRuns(); } catch { /* The deletion succeeded; show the separate load error. */ }
+    } catch (requestError) {
+      setDeleteError(requestError instanceof Error ? requestError.message : "Unable to delete this activity. Please try again.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function importLegacyRuns() {
+    if (!legacyRuns?.length) return;
+    setImporting(true);
+    setMigrationError("");
+    try {
+      const response = await fetch("/api/activities/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activities: legacyRuns }),
+      });
+      if (!response.ok) throw new Error(await readApiError(response, "Unable to import old activities. Your browser copy has been kept safe."));
+      const payload: unknown = await response.json();
+      if (!payload || typeof payload !== "object" || !("verified" in payload) || payload.verified !== true || !("importedCount" in payload) || payload.importedCount !== legacyRuns.length) {
+        throw new Error("The imported activities could not be verified. Your browser copy has been kept safe.");
+      }
+      const refreshed = await readActivities();
+      setRuns(refreshed);
+      setActivityError("");
+      localStorage.removeItem(ACTIVITY_KEY);
+      setLegacyRuns(null);
+      setMigrationDismissed(true);
+      setMigrationMessage(`${legacyRuns.length} previous ${legacyRuns.length === 1 ? "run was" : "runs were"} imported successfully.`);
+    } catch (requestError) {
+      setMigrationError(requestError instanceof Error ? requestError.message : "Unable to import old activities. Your browser copy has been kept safe.");
+    } finally {
+      setImporting(false);
+    }
   }
 
   async function generateAiRecommendation() {
@@ -139,20 +273,6 @@ export default function Dashboard() {
       return;
     }
 
-    const context: TrainingContext = {
-      experienceLevel: level.toLowerCase() as TrainingContext["experienceLevel"],
-      totalRuns: runs.length,
-      totalDistance: Number(totalDistance.toFixed(1)),
-      averagePace: averagePace > 0 ? `${formatPace(averagePace)}/km` : "Not available",
-      longestRun: Number(longest.toFixed(1)),
-      recentRuns: sortedRuns.slice(0, 10).map((run) => ({
-        date: run.date,
-        distance: run.distance,
-        durationMinutes: Number((run.duration / 60).toFixed(1)),
-        pace: `${formatPace(run.pace)}/km`,
-      })),
-    };
-
     setIsGenerating(true);
     setAiRecommendation(null);
     setAiError("");
@@ -160,7 +280,7 @@ export default function Dashboard() {
       const response = await fetch("/api/recommendation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ context }),
+        body: JSON.stringify({ experienceLevel: level.toLowerCase() }),
       });
       const payload: unknown = await response.json();
       if (!response.ok || !payload || typeof payload !== "object" || !("recommendation" in payload)) {
@@ -182,11 +302,71 @@ export default function Dashboard() {
     }
   }
 
+  async function refreshStravaStatus() {
+    const response = await fetch("/api/strava/status");
+    const payload = await response.json();
+    if (!response.ok) throw new Error("Unable to load Strava connection status.");
+    setStravaStatus(payload.connection ?? { connected: false, athleteId: null, lastSyncedAt: null });
+  }
+
+  async function syncStravaActivities() {
+    setIsSyncingStrava(true);
+    setStravaError("");
+    setStravaMessage("");
+    try {
+      const response = await fetch("/api/strava/sync", { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(typeof payload?.error === "string" ? payload.error : "Unable to retrieve activities from Strava. Please try again later.");
+      await refreshRuns();
+      await refreshStravaStatus();
+      setStravaMessage(payload.newActivities > 0
+        ? `Strava sync complete. ${payload.newActivities} new ${payload.newActivities === 1 ? "activity" : "activities"} imported. ${payload.alreadySynced} already synced.`
+        : "Your Strava activities are already up to date.");
+    } catch (syncError) {
+      setStravaError(syncError instanceof Error ? syncError.message : "Unable to retrieve activities from Strava. Please try again later.");
+      if (syncError instanceof Error && syncError.message.toLowerCase().includes("reconnect")) {
+        setStravaStatus({ connected: false, athleteId: null, lastSyncedAt: null });
+      }
+    } finally {
+      setIsSyncingStrava(false);
+    }
+  }
+
+  async function disconnectStrava() {
+    if (!window.confirm("Disconnect Strava? Activities already imported will remain in your history.")) return;
+    setIsDisconnectingStrava(true);
+    setStravaError("");
+    setStravaMessage("");
+    try {
+      const response = await fetch("/api/strava/disconnect", { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(typeof payload?.error === "string" ? payload.error : "Unable to disconnect Strava. Please try again.");
+      setStravaStatus({ connected: false, athleteId: null, lastSyncedAt: null });
+      setStravaMessage("Strava disconnected. Imported activities remain in your history.");
+    } catch (disconnectError) {
+      setStravaError(disconnectError instanceof Error ? disconnectError.message : "Unable to disconnect Strava. Please try again.");
+    } finally {
+      setIsDisconnectingStrava(false);
+    }
+  }
+
+  async function logout() {
+    setAuthError("");
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) throw signOutError;
+      window.location.assign("/login");
+    } catch {
+      setAuthError("Unable to log out. Please try again.");
+    }
+  }
+
   return <main className="page-shell">
     <header className="topbar">
       <a href="#home" className="brand" aria-label="Cah Kalcer Coach home"><span className="brand-mark"><Icon name="shoe"/></span><span>Cah Kalcer<span className="brand-muted"> Coach</span></span></a>
       <nav className="nav-links" aria-label="Main navigation"><a className="nav-active" href="#home">Dashboard</a><a href="#activities">Activities</a></nav>
-      <div className="top-profile"><span className="avatar">{level === "Beginner" ? "B" : "I"}</span><span>{level} runner</span></div>
+      <div className="top-profile"><span className="avatar">{level === "Beginner" ? "B" : "I"}</span><span>{userEmail || `${level} runner`}</span><button className="logout-button" type="button" onClick={logout}>Log out</button></div>
     </header>
 
     <section id="home" className="welcome-row">
@@ -195,11 +375,18 @@ export default function Dashboard() {
     </section>
 
     <section className="summary-grid" aria-label="Running statistics">
-      <SummaryCard label="Total distance" value={ready ? totalDistance.toFixed(1) : "0.0"} unit="km" icon="distance" foot="Across all your runs"/>
-      <SummaryCard label="Total runs" value={ready ? String(runs.length) : "0"} unit="" icon="runs" foot="Every run counts"/>
-      <SummaryCard label="Average pace" value={ready && averagePace ? formatPace(averagePace) : "—"} unit={averagePace ? "/km" : ""} icon="pace" foot="Based on total distance"/>
-      <SummaryCard label="Longest run" value={ready && longest ? longest.toFixed(1) : "—"} unit={longest ? "km" : ""} icon="longest" foot="Your personal best"/>
+      <SummaryCard label="Total distance" value={isLoadingRuns ? "…" : totalDistance.toFixed(1)} unit={isLoadingRuns ? "" : "km"} icon="distance" foot="Across all your runs"/>
+      <SummaryCard label="Total runs" value={isLoadingRuns ? "…" : String(runs.length)} unit="" icon="runs" foot="Every run counts"/>
+      <SummaryCard label="Average pace" value={isLoadingRuns ? "…" : averagePace ? formatPace(averagePace) : "—"} unit={!isLoadingRuns && averagePace ? "/km" : ""} icon="pace" foot="Based on total distance"/>
+      <SummaryCard label="Longest run" value={isLoadingRuns ? "…" : longest ? longest.toFixed(1) : "—"} unit={!isLoadingRuns && longest ? "km" : ""} icon="longest" foot="Your personal best"/>
     </section>
+
+    {legacyRuns && !migrationDismissed && <section className="migration-notice" aria-labelledby="migration-heading">
+      <span className="migration-icon"><Icon name="runs"/></span>
+      <div className="migration-copy"><h2 id="migration-heading">We found {legacyRuns.length} saved {legacyRuns.length === 1 ? "run" : "runs"} from your previous version</h2><p>Import them into the Supabase database? Your browser copy will only be removed after the import is verified.</p>{migrationError && <p className="migration-error" role="alert">{migrationError}</p>}</div>
+      <div className="migration-actions"><button className="button button-primary" type="button" onClick={importLegacyRuns} disabled={importing || isLoadingRuns}>{importing ? "Importing…" : "Import activities"}</button><button className="migration-dismiss" type="button" onClick={() => setMigrationDismissed(true)} disabled={importing}>Not now</button></div>
+    </section>}
+    {migrationMessage && <p className="migration-success" role="status">{migrationMessage}</p>}
 
     <section className="dashboard-grid">
       <div className="left-column">
@@ -218,8 +405,10 @@ export default function Dashboard() {
 
         <section id="activities" className="panel activities-panel" aria-labelledby="activities-heading">
           <div className="panel-heading"><div><p className="eyebrow">YOUR PROGRESS</p><h2 id="activities-heading">Recent activities</h2></div><a className="text-link" href="#activity-form">Add a run <span>↗</span></a></div>
-          {!ready || sortedRuns.length === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name="shoe"/></span><strong>No running activity yet.</strong><p>Start by adding your first run. Every journey begins somewhere.</p><a className="button button-secondary" href="#activity-form">Add your first run <span>＋</span></a></div> : <div className="activity-list">
-            {sortedRuns.map((run) => <article className="activity-row" key={run.id}><span className="activity-shoe"><Icon name="shoe"/></span><div className="activity-details"><strong>{run.notes || "Morning run"}</strong><span><Icon name="calendar"/> {prettyDate(run.date)}</span></div><div className="activity-metric"><strong>{run.distance.toFixed(1)} <small>km</small></strong><span>Distance</span></div><div className="activity-metric"><strong>{formatDuration(run.duration)}</strong><span>Duration</span></div><div className="activity-metric"><strong>{formatPace(run.pace)} <small>/km</small></strong><span>Average pace</span></div><button className="delete-button" type="button" onClick={() => deleteRun(run.id)} aria-label={`Delete run on ${prettyDate(run.date)}`} title="Delete activity"><Icon name="trash"/></button></article>)}
+          {activityError && <div className="database-error" role="alert"><span>{activityError}</span><button type="button" onClick={() => { setIsLoadingRuns(true); refreshRuns().catch(() => {}).finally(() => setIsLoadingRuns(false)); }}>Try again</button></div>}
+          {deleteError && <p className="database-error-text" role="alert">{deleteError}</p>}
+          {isLoadingRuns ? <div className="empty-state"><strong>Loading your runs...</strong></div> : activityError && runs.length === 0 ? <div className="empty-state"><strong>Activities are temporarily unavailable.</strong><p>Try loading your running history again.</p></div> : sortedRuns.length === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name="shoe"/></span><strong>No running activities yet.</strong><p>Add your first run to start tracking your progress.</p><a className="button button-secondary" href="#activity-form">Add your first run <span>＋</span></a></div> : <div className="activity-list">
+            {sortedRuns.map((run) => <article className="activity-row" key={run.id}><span className="activity-shoe"><Icon name="shoe"/></span><div className="activity-details"><strong>{run.notes || "Morning run"}</strong><span><Icon name="calendar"/> {prettyDate(run.date)} <span className={`source-badge ${run.source === "strava" ? "source-strava" : ""}`}>{run.source === "strava" ? "Strava" : "Manual"}</span></span>{deletingId === run.id && <span className="delete-status" role="status">Deleting…</span>}</div><div className="activity-metric"><strong>{run.distance.toFixed(1)} <small>km</small></strong><span>Distance</span></div><div className="activity-metric"><strong>{formatDuration(run.duration)}</strong><span>Duration</span></div><div className="activity-metric"><strong>{formatPace(run.pace)} <small>/km</small></strong><span>Average pace</span></div><button className="delete-button" type="button" onClick={() => deleteRun(run.id)} disabled={deletingId === run.id} aria-label={deletingId === run.id ? "Deleting activity" : `Delete run on ${prettyDate(run.date)}`} title={deletingId === run.id ? "Deleting..." : "Delete activity"}>{deletingId === run.id ? "…" : <Icon name="trash"/>}</button></article>)}
           </div>}
         </section>
       </div>
@@ -231,11 +420,25 @@ export default function Dashboard() {
             <label className="field-label" htmlFor="run-date">Date</label><div className="input-wrap"><span className="input-icon"><Icon name="calendar"/></span><input id="run-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required/></div>
             <label className="field-label" htmlFor="distance">Distance</label><div className="input-wrap"><input id="distance" type="number" min="0.01" step="0.01" placeholder="e.g. 3.5" value={distance} onChange={(event) => setDistance(event.target.value)} required/><span className="input-suffix">km</span></div>
             <label className="field-label">Duration</label><div className="duration-inputs"><label><input aria-label="Duration hours" type="number" min="0" placeholder="0" value={hours} onChange={(event) => setHours(event.target.value)} /><span>hours</span></label><label><input aria-label="Duration minutes" type="number" min="0" max="59" placeholder="00" value={minutes} onChange={(event) => setMinutes(event.target.value)} /><span>min</span></label><label><input aria-label="Duration seconds" type="number" min="0" max="59" placeholder="00" value={seconds} onChange={(event) => setSeconds(event.target.value)} /><span>sec</span></label></div>
-            {distance && Number(distance) > 0 && (Number(hours || 0) + Number(minutes || 0) + Number(seconds || 0)) > 0 && <div className="pace-preview"><Icon name="clock"/><span>Calculated pace</span><strong>{formatPace((Number(hours || 0) * 3600 + Number(minutes || 0) * 60 + Number(seconds || 0)) / Number(distance))} /km</strong></div>}
+            {distance && Number(distance) >= 0.01 && (Number(hours || 0) + Number(minutes || 0) + Number(seconds || 0)) > 0 && <div className="pace-preview"><Icon name="clock"/><span>Calculated pace</span><strong>{formatPace((Number(hours || 0) * 3600 + Number(minutes || 0) * 60 + Number(seconds || 0)) / Number(Number(distance).toFixed(2)))} /km</strong></div>}
             <label className="field-label" htmlFor="notes">Notes <span className="optional">Optional</span></label><textarea id="notes" rows={2} maxLength={120} placeholder="How did it feel?" value={notes} onChange={(event) => setNotes(event.target.value)}/>
-            {error && <p className="form-message form-error" role="alert">{error}</p>}{saved && <p className="form-message form-success" role="status">Run saved. Nice work showing up!</p>}
-            <button className="button button-primary submit-button" type="submit">Save activity <span>↗</span></button>
+            {error && <p className="form-message form-error" role="alert">{error}</p>}{saveError && <p className="form-message form-error" role="alert">{saveError}</p>}{saved && <p className="form-message form-success" role="status">Run saved. Nice work showing up!</p>}
+            <button className="button button-primary submit-button" type="submit" disabled={saving || isLoadingRuns}>{saving ? "Saving…" : <>Save activity <span>↗</span></>}</button>
           </form>
+        </section>
+
+        <section className="panel strava-panel" aria-labelledby="strava-heading">
+          <div className="panel-heading"><div><p className="eyebrow">ACTIVITY IMPORT</p><h2 id="strava-heading">Strava</h2></div><span className={`strava-status-dot ${stravaStatus.connected ? "is-connected" : ""}`}/></div>
+          {isLoadingStrava ? <p className="strava-copy">Checking connection…</p> : stravaStatus.connected ? <>
+            <p className="strava-connection"><span className="connected-check">✓</span> Connected {stravaStatus.athleteId && <span className="athlete-id">Athlete {stravaStatus.athleteId}</span>}</p>
+            <p className="strava-copy">Last synced: {stravaStatus.lastSyncedAt ? new Date(stravaStatus.lastSyncedAt).toLocaleString() : "Not synced yet"}</p>
+            <div className="strava-actions"><button className="button button-primary" type="button" onClick={syncStravaActivities} disabled={isSyncingStrava || isDisconnectingStrava}>{isSyncingStrava ? "Syncing activities…" : "Sync activities"}</button><button className="strava-secondary-button" type="button" onClick={disconnectStrava} disabled={isSyncingStrava || isDisconnectingStrava}>{isDisconnectingStrava ? "Disconnecting…" : "Disconnect"}</button></div>
+          </> : <>
+            <p className="strava-copy">Import your running activities automatically from your Strava account.</p>
+            <a className="button button-primary strava-connect" href="/api/strava/connect">Connect Strava</a>
+          </>}
+          {stravaError && <p className="strava-error" role="alert">{stravaError}</p>}
+          {stravaMessage && <p className="strava-message" role="status">{stravaMessage}</p>}
         </section>
 
         <section className="panel profile-panel" aria-labelledby="profile-heading">
@@ -243,9 +446,10 @@ export default function Dashboard() {
           <label className="field-label" htmlFor="experience-level">Experience level</label><select id="experience-level" value={level} onChange={(event) => { setLevel(event.target.value as ExperienceLevel); setAiRecommendation(null); setAiError(""); }}><option value="Beginner">Beginner</option><option value="Intermediate">Intermediate</option></select>
           <p className="profile-note">Your level helps tailor the distance in your next run suggestion.</p>
         </section>
-        <p className="local-note"><span>⌑</span> Your runs are saved on this device only.</p>
+        <p className="local-note"><span>⌑</span> Your activities are saved in the Supabase database.</p>
       </aside>
     </section>
+    {authError && <p className="auth-error" role="alert">{authError}</p>}
     <footer className="footer"><span>CAH KALCER COACH</span><span>Made for the joy of getting out there.</span></footer>
   </main>;
 }

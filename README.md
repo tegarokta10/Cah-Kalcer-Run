@@ -1,44 +1,55 @@
 # Cah Kalcer Coach
 
-A simple running tracker and training companion for beginner runners. Running data stays in your browser, and V2 can generate a more personal recommendation through Gemini when you request one.
+A running tracker for beginner runners. The project evolved from local tracking (V1), through Gemini recommendations (V2) and Supabase storage (V3), to user-owned data and read-only Strava sync (V4).
 
 ## Current Version
 
-V2 — AI Recommendation
+V4 — Strava Integration
 
-### V2 Features
+### V4 Features
 
-- Running activity tracking
-- Running statistics
-- LocalStorage persistence
-- Rule-based recommendation
-- AI-powered recommendation
-- Gemini API integration
-- Responsive typography
-- AI fallback mechanism
+- Supabase email/password authentication
+- User-owned running activities with Row Level Security
+- Strava OAuth with read-only activity scope
+- Strava activity import and normalization
+- Duplicate prevention across repeated syncs
+- Persistent manual and Strava running data
+- Gemini AI recommendation and rule-based fallback
+- V2 browser-data migration
 
-Additional V1 features include pace calculation, run history, activity deletion, and Beginner/Intermediate profiles.
-
-## Run locally
+## Setup
 
 You need Node.js 20 or newer and npm.
+
+1. Create a Supabase project and enable Email authentication.
+2. Run the V4 SQL migration in [docs/DATABASE.md](./docs/DATABASE.md).
+3. If your V3 database has rows, follow the owner backfill in that guide after creating the first account.
+4. In Supabase Auth URL Configuration, allow `http://localhost:3000/auth/callback` for email confirmation.
+5. Register a Strava API application. Set its authorization callback domain to `localhost` for local development and add `http://localhost:3000/api/strava/callback` as the redirect URI.
+6. Copy `.env.example` to `.env.local` and fill in the Supabase, Strava, and token-encryption variables. `GEMINI_API_KEY` is optional.
+7. Install and start the app:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). To enable AI recommendations, copy `.env.example` to `.env.local`, set `GEMINI_API_KEY`, and restart the dev server. The key is used by the server only. The tracker and rule-based recommendation work without it.
+Open [http://localhost:3000](http://localhost:3000). Restart Next.js after editing `.env.local`.
 
-## How to use
+Create a random 32-byte encryption key for `STRAVA_TOKEN_ENCRYPTION_KEY`, encoded as Base64. For example, run this in a terminal and copy its output into `.env.local`:
 
-1. Add a run with its date, distance, and duration. Pace is calculated automatically.
-2. Review your activity history and running statistics.
-3. Choose Beginner or Intermediate in Runner Profile.
-4. Select **Generate AI Recommendation** to request a Gemini suggestion. If Gemini is unavailable, the rule-based suggestion stays visible.
-5. Delete an activity with its trash button and confirm the prompt.
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
 
-Activities are stored in browser `localStorage` under `runningActivities`; your level uses `runnerProfile`. They remain on this browser and device. Clearing browser storage removes them.
+Never commit `.env.local`. Do not expose the Strava client secret, token encryption key, or Supabase service-role key to the browser.
+
+## First use
+
+1. Sign up or log in.
+2. If the browser contains V2 activities, choose whether to import them into your account.
+3. Add a manual run or choose **Connect Strava**, approve read access, then use **Sync activities**.
+4. Imported activities are marked Strava; disconnecting Strava keeps already imported runs.
 
 ## Verify the app
 
@@ -46,19 +57,29 @@ Activities are stored in browser `localStorage` under `runningActivities`; your 
 npm run build
 ```
 
-For a manual check, add a run, refresh, confirm its pace and statistics, switch experience level, request an AI recommendation (with a valid API key), and delete the run. Without a key, confirm the missing-key message and rule-based fallback.
+Then follow the manual checks in [docs/V4.md](./docs/V4.md). Full OAuth and database tests require a configured Supabase project and Strava application.
 
 ## Documentation
 
-- [V2 Development](./docs/V2.md)
-- [AI Recommendation](./docs/AI-RECOMMENDATION.md)
+### Development History
+
+- [V1 — Running Tracker](./docs/V1.md)
+- [V2 — AI Recommendation](./docs/V2.md)
+- [V3 — Persistent Database](./docs/V3.md)
+- [V4 — Strava Integration](./docs/V4.md)
+
+### Technical Documentation
+
 - [Architecture](./docs/ARCHITECTURE.md)
+- [Database](./docs/DATABASE.md)
+- [AI Recommendation](./docs/AI-RECOMMENDATION.md)
+- [Strava Integration](./docs/STRAVA-INTEGRATION.md)
 
 ## Tech stack
 
 - Next.js App Router, React, and TypeScript
-- Tailwind CSS and custom dashboard styles
-- Browser `localStorage`
+- Supabase Auth, PostgreSQL, and Row Level Security
+- Official Strava OAuth 2.0 and API v3
 - Official Google GenAI JavaScript SDK (`@google/genai`)
 
-No Strava, OAuth, database, authentication, user accounts, or AI agent is used in V2.
+Strava sync is read-only. The app does not post or edit Strava activities and has no social features or AI agent.

@@ -66,3 +66,9 @@ The API key is never returned to the browser, written to local storage, or logge
 ## Safety limits
 
 Suggestions are general educational guidance, not a diagnosis or medical recommendation. A schema and distance cap reduce extreme output, but they do not know a runner's health, fatigue, or injury history. The runner should adjust or skip a workout when needed.
+
+## V3 data source
+
+In V1/V2, the dashboard built this context from running activities in browser `localStorage`. In V3, it builds the same compact context from the current Supabase activity response. Only the most recent ten database records and the aggregate statistics are sent to `/api/recommendation`; activity notes are not included. The Gemini prompt and JSON response fields remain the V2 implementation.
+
+In V4, the browser sends only the signed-in runner's experience level. The server verifies the Supabase user, reads that user's activity rows under RLS, and builds the training context on the server. The browser cannot submit another user's history as recommendation input.

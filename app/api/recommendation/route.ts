@@ -1,5 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
+import { formatPace } from "@/lib/running";
+import { getAuthenticatedUser } from "@/lib/supabase/auth";
 import type { AiRecommendation, TrainingContext } from "@/types/recommendation";
 
 export const runtime = "nodejs";
@@ -51,38 +53,10 @@ function parseRecommendation(value: unknown, context: TrainingContext): AiRecomm
   };
 }
 
-function parseContext(value: unknown): TrainingContext | null {
-  if (!isRecord(value) || !Array.isArray(value.recentRuns)) return null;
-  const { experienceLevel, totalRuns, totalDistance, averagePace, longestRun, recentRuns } = value;
-  if (
-    !["beginner", "intermediate"].includes(String(experienceLevel)) ||
-    !Number.isInteger(totalRuns) || Number(totalRuns) < 1 || Number(totalRuns) > 100_000 ||
-    typeof totalDistance !== "number" || !Number.isFinite(totalDistance) || totalDistance <= 0 || totalDistance > 1_000_000 ||
-    typeof averagePace !== "string" || averagePace.length > 20 ||
-    typeof longestRun !== "number" || !Number.isFinite(longestRun) || longestRun <= 0 || longestRun > 1_000 ||
-    recentRuns.length === 0 || recentRuns.length > 10
-  ) return null;
-
-  const cleanRuns: TrainingContext["recentRuns"] = [];
-  for (const run of recentRuns) {
-    if (!isRecord(run) || typeof run.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(run.date) ||
-        typeof run.distance !== "number" || !Number.isFinite(run.distance) || run.distance <= 0 || run.distance > 1_000 ||
-        typeof run.durationMinutes !== "number" || !Number.isFinite(run.durationMinutes) || run.durationMinutes <= 0 || run.durationMinutes > 10_000 ||
-        typeof run.pace !== "string" || run.pace.length > 20) return null;
-    cleanRuns.push({ date: run.date, distance: run.distance, durationMinutes: run.durationMinutes, pace: run.pace });
-  }
-
-  return {
-    experienceLevel: experienceLevel as TrainingContext["experienceLevel"],
-    totalRuns: Number(totalRuns),
-    totalDistance,
-    averagePace,
-    longestRun,
-    recentRuns: cleanRuns,
-  };
-}
-
 export async function POST(request: Request) {
+  const auth = await getAuthenticatedUser();
+  if (!auth) return NextResponse.json({ error: "Please log in to request a recommendation.", code: "UNAUTHENTICATED" }, { status: 401 });
+
   if (!process.env.GEMINI_API_KEY) {
     return NextResponse.json({ error: "AI recommendation is not configured yet.", code: "AI_NOT_CONFIGURED" }, { status: 503 });
   }
@@ -94,10 +68,50 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "The recommendation request was invalid.", code: "INVALID_REQUEST" }, { status: 400 });
   }
 
-  const context = isRecord(body) ? parseContext(body.context) : null;
-  if (!context) {
+  const experienceLevel = isRecord(body) ? body.experienceLevel : null;
+  if (experienceLevel !== "beginner" && experienceLevel !== "intermediate") {
+    return NextResponse.json({ error: "The runner profile is invalid. Please choose an experience level.", code: "INVALID_REQUEST" }, { status: 400 });
+  }
+
+  let activityRows: Array<{ date: string; distance: number; duration: number; pace: number }> = [];
+  try {
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await auth.supabase
+        .from("running_activities")
+        .select("date,distance,duration,pace")
+        .eq("user_id", auth.user.id)
+        .order("date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      const rows = (data ?? []) as typeof activityRows;
+      activityRows = activityRows.concat(rows);
+      if (rows.length < pageSize) break;
+    }
+  } catch {
+    return NextResponse.json({ error: "Unable to load your running activities for a recommendation.", code: "DATABASE_UNAVAILABLE" }, { status: 503 });
+  }
+
+  if (activityRows.length === 0) {
     return NextResponse.json({ error: "Add at least one running activity before generating a recommendation.", code: "NO_RUNNING_DATA" }, { status: 400 });
   }
+
+  const totalDistance = activityRows.reduce((sum, run) => sum + Number(run.distance), 0);
+  const totalDuration = activityRows.reduce((sum, run) => sum + Number(run.duration), 0);
+  const context: TrainingContext = {
+    experienceLevel,
+    totalRuns: activityRows.length,
+    totalDistance: Number(totalDistance.toFixed(1)),
+    averagePace: totalDistance > 0 ? `${formatPace(totalDuration / totalDistance)}/km` : "Not available",
+    longestRun: Number(Math.max(...activityRows.map((run) => Number(run.distance))).toFixed(1)),
+    recentRuns: activityRows.slice(0, 10).map((run) => ({
+      date: run.date,
+      distance: Number(run.distance),
+      durationMinutes: Number((Number(run.duration) / 60).toFixed(1)),
+      pace: `${formatPace(Number(run.pace))}/km`,
+    })),
+  };
 
   const prompt = [
     "You are a general running recommendation assistant for recreational runners.",
